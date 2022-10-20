@@ -1,4 +1,4 @@
-import { Component } from 'react';
+import { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { axiosPicture } from '../../Services/picture-api';
 import { GalleryItem } from 'components/ImageGalleryItem/ImageGalleryItem';
@@ -6,104 +6,87 @@ import { ButtonPagination } from 'components/Button/Button';
 import { Modal } from '../Modal/Modal';
 import ThreeDots from '../Loader/Loader';
 import s from './ImageGallery.module.css';
+import { useRef } from 'react';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
-export class Gallery extends Component {
-  state = {
-    gallery: [],
-    isLoading: false,
-    error: null,
-    page: 1,
-    currentImage: null,
+export const Gallery = ({ searchQuery }) => {
+  const [gallery, setGallery] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [page, setPage] = useState(1);
+  const [currentImage, setCurrentImage] = useState(null);
+  const ref = useRef(null);
+  const refPage = useRef(null);
+
+  const notify = () => {
+    toast.warn('Did not find anything! Please change the request.');
   };
 
-  static propTypes = { 
-    searchQuery: PropTypes.string.isRequired,
-    onUpdate: PropTypes.func.isRequired}
-
-  async componentDidUpdate(prevProps, prevState) {
-    const prevQuery = prevProps.searchQuery;
-    const nextQuery = this.props.searchQuery;
-    const prevPage = prevState.page;
-    const nextPage = this.state.page;
-
-     if (prevQuery !== nextQuery) {
+  useEffect(() => {
+    const fetchData = async () => {
       try {
-        this.setState({ isLoading: true, page: 1 });
-        const pictureData = await axiosPicture(nextQuery);
-        this.setState({ gallery: pictureData });
-        this.props.onUpdate(
-          pictureData,
-          this.state.isLoading,
-          this.state.error
-        );
-      
+        setIsLoading(true);
+        setError(null);
+        let pictureData;
+
+        if (searchQuery !== '' && ref.current !== searchQuery) {
+          pictureData = await axiosPicture(searchQuery);
+          setPage(1);
+          setGallery(pictureData);
+          ref.current = searchQuery;
+        }
+
+        if (page !== 1 && page !== refPage.current) {
+          const pictureDataNextPage = await axiosPicture(searchQuery, page);
+          setGallery(prevgallery => [...prevgallery, ...pictureDataNextPage]);
+          refPage.current = page;
+        }
+        if (pictureData?.length === 0) {
+          notify();
+        }
       } catch (err) {
-        this.setState({ error: err.message });
+        setError(err.message);
       } finally {
-        this.setState({ isLoading: false });
+        setIsLoading(false);
       }
-    }
-    if (prevPage !== nextPage && nextPage !== 1) {
-      try {
-        this.setState({ isLoading: true, error: '' });
-        const pictureData = await axiosPicture(
-          this.props.searchQuery,
-          this.state.page
-        );
-     
-        this.setState(({ gallery }) => ({
-          gallery: [...gallery, ...pictureData],
-        }));
-        this.props.onUpdate(
-          pictureData,
-          this.state.isLoading,
-          this.state.error
-        );
-      } catch (err) {
-        this.setState({ error: err.message });
-      } finally {
-        this.setState({ isLoading: false });
-      }
-    }
-  }
-   pagination = e => {
+    };
+    fetchData();
+  }, [page, searchQuery]);
+
+  const pagination = e => {
     e.preventDefault();
-    this.setState(prevState => ({ page: prevState.page + 1 }));
+    setPage(prevState => prevState + 1);
   };
-  updateCurrentImage = data => {
-    this.setState({ currentImage: data });
+  const updateCurrentImage = data => {
+    setCurrentImage(data);
   };
-  closeModal = () => {
-    this.setState({ currentImage: null });
+  const closeModal = () => {
+    setCurrentImage(null);
   };
-  render() {
-    const { page, gallery, currentImage, isLoading, error } = this.state;
 
-    return (
-      <>
-        {error && (
-          <span className={s.error}>Oops! Something went wrong. {error}</span>
+  return (
+    <>
+      {error && (
+        <span className={s.error}>Oops! Something went wrong. {error}</span>
+      )}
+      {!isLoading && !error && gallery.length === 0 && <ToastContainer />}
+
+      <ul className={s.gallery}>
+        {!!gallery.length && (
+          <GalleryItem gallery={gallery} openModal={updateCurrentImage} />
         )}
-        <ul className={s.gallery}>
-          {!!gallery.length && (
-            <GalleryItem
-              gallery={gallery}
-              openModal={this.updateCurrentImage}
-            />
-          )}
-        </ul>
-        {isLoading && <ThreeDots />}
-        {!!gallery.length &&
-          gallery.length >= page * 12 && (
-            <ButtonPagination pagination={this.pagination} />
-          )}
+      </ul>
+      {isLoading && <ThreeDots />}
+      {!!gallery.length && gallery.length >= page * 12 && (
+        <ButtonPagination pagination={pagination} />
+      )}
 
-        {currentImage && (
-          <Modal image={currentImage} closeModal={this.closeModal} />
-        )}
-      </>
-    );
-  }
-}
+      {currentImage && <Modal image={currentImage} closeModal={closeModal} />}
+    </>
+  );
+};
 
-
+Gallery.propTypes = {
+  searchQuery: PropTypes.string.isRequired,
+};
